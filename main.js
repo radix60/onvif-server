@@ -1,4 +1,5 @@
 const tcpProxy = require('node-tcp-proxy');
+const rtspProxy = require('./src/rtsp-proxy');
 const onvifServer = require('./src/onvif-server');
 const configBuilder = require('./src/config-builder');
 const package = require('./package.json');
@@ -86,6 +87,7 @@ if (args) {
         }
 
         let proxies = {};
+        let rtspPorts = new Set();
 
         for (let onvifConfig of config.onvif) {
             let server = onvifServer.createServer(onvifConfig, logger);
@@ -101,8 +103,10 @@ if (args) {
                 if (!proxies[onvifConfig.target.hostname])
                     proxies[onvifConfig.target.hostname] = {}
                 
-                if (onvifConfig.ports.rtsp && onvifConfig.target.ports.rtsp)
+                if (onvifConfig.ports.rtsp && onvifConfig.target.ports.rtsp) {
                     proxies[onvifConfig.target.hostname][onvifConfig.ports.rtsp] = onvifConfig.target.ports.rtsp;
+                    rtspPorts.add(String(onvifConfig.ports.rtsp));
+                }
                 if (onvifConfig.ports.snapshot && onvifConfig.target.ports.snapshot)
                     proxies[onvifConfig.target.hostname][onvifConfig.ports.snapshot] = onvifConfig.target.ports.snapshot;
             } else {
@@ -113,8 +117,13 @@ if (args) {
         
         for (let destinationAddress in proxies) {
             for (let sourcePort in proxies[destinationAddress]) {
-                logger.info(`Starting tcp proxy from port ${sourcePort} to ${destinationAddress}:${proxies[destinationAddress][sourcePort]} ...`);
-                tcpProxy.createProxy(sourcePort, destinationAddress, proxies[destinationAddress][sourcePort]);
+                if (rtspPorts.has(sourcePort)) {
+                    logger.info(`Starting rtsp proxy from port ${sourcePort} to ${destinationAddress}:${proxies[destinationAddress][sourcePort]} ...`);
+                    rtspProxy.createProxy(sourcePort, destinationAddress, proxies[destinationAddress][sourcePort]);
+                } else {
+                    logger.info(`Starting tcp proxy from port ${sourcePort} to ${destinationAddress}:${proxies[destinationAddress][sourcePort]} ...`);
+                    tcpProxy.createProxy(sourcePort, destinationAddress, proxies[destinationAddress][sourcePort]);
+                }
                 logger.info('  Started!');
                 logger.info('');
             }
