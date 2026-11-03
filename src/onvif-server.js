@@ -335,9 +335,19 @@ class OnvifServer {
     listen(request, response) {
         let action = url.parse(request.url, true).pathname;
         if (action == '/snapshot.png') {
-            let image = fs.readFileSync('./resources/snapshot.png');
-            response.writeHead(200, {'Content-Type': 'image/png' });
-            response.end(image, 'binary');
+            // snapshot-sidecar: live frame from 127.0.0.1:8580, static logo on failure
+            const fallback = () => {
+                let image = fs.readFileSync('./resources/snapshot.png');
+                response.writeHead(200, {'Content-Type': 'image/png' });
+                response.end(image, 'binary');
+            };
+            const req = http.get({ host: '127.0.0.1', port: 8580, path: '/snapshot.jpg', timeout: 9000 }, (res) => {
+                if (res.statusCode != 200) { res.resume(); return fallback(); }
+                response.writeHead(200, {'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
+                res.pipe(response);
+            });
+            req.on('timeout', () => req.destroy(new Error('sidecar timeout')));
+            req.on('error', fallback);
         } else {
             response.writeHead(404, {'Content-Type': 'text/plain'});
             response.write('404 Not Found\n');
